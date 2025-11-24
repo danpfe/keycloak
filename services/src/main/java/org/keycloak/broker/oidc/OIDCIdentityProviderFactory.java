@@ -75,6 +75,10 @@ public class OIDCIdentityProviderFactory extends AbstractIdentityProviderFactory
             config.setUseJwksUrl(true);
             config.setJwksUrl(rep.getJwksUri());
         }
+		if (rep.getPushedAuthorizationRequestEndpoint() != null) {
+			config.setUseParUrl(rep.getRequirePushedAuthorizationRequests() != null && rep.getRequirePushedAuthorizationRequests());
+			config.setParUrl(rep.getPushedAuthorizationRequestEndpoint());
+		}
 
         // Introspection URL may or may not be available in the configuration. It is available in RFC8414 , but not in the OIDC discovery specification.
         // Hence some servers may not add it to their well-known responses

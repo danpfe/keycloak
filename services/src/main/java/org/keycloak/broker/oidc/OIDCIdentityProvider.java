@@ -25,6 +25,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
+import com.google.common.base.Strings;
+
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.QueryParam;
@@ -34,6 +36,11 @@ import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriBuilder;
 import jakarta.ws.rs.core.UriInfo;
+
+import org.apache.http.NameValuePair;
+import org.apache.http.client.entity.UrlEncodedFormEntity;
+
+import org.apache.http.message.BasicNameValuePair;
 
 import org.keycloak.OAuth2Constants;
 import org.keycloak.OAuthErrorException;
@@ -49,8 +56,10 @@ import org.keycloak.broker.provider.IdentityBrokerException;
 import org.keycloak.broker.provider.JWTAuthorizationGrantProvider;
 import org.keycloak.common.Profile;
 import org.keycloak.common.util.Base64Url;
+import org.keycloak.common.util.MultivaluedHashMap;
 import org.keycloak.common.util.SecretGenerator;
 import org.keycloak.common.util.Time;
+import org.keycloak.common.util.UriUtils;
 import org.keycloak.crypto.KeyUse;
 import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.crypto.SignatureProvider;
@@ -101,7 +110,7 @@ import org.jboss.logging.Logger;
  * @author Pedro Igor
  */
 public class OIDCIdentityProvider extends AbstractOAuth2IdentityProvider<OIDCIdentityProviderConfig> implements ExchangeExternalToken, ClientAssertionIdentityProvider<OIDCIdentityProviderConfig>, JWTAuthorizationGrantProvider<OIDCIdentityProviderConfig> {
-    protected static final Logger logger = Logger.getLogger(OIDCIdentityProvider.class);
+	protected static final Logger logger = Logger.getLogger(OIDCIdentityProvider.class);
 
     public static final String SCOPE_OPENID = "openid";
     public static final String FEDERATED_ID_TOKEN = "FEDERATED_ID_TOKEN";
@@ -112,8 +121,9 @@ public class OIDCIdentityProvider extends AbstractOAuth2IdentityProvider<OIDCIde
     public static final String VALIDATED_ACCESS_TOKEN = "VALIDATED_ACCESS_TOKEN";
     private static final String BROKER_NONCE_PARAM = "BROKER_NONCE";
     private static final List<String> SUPPORTED_TOKEN_TYPES = Arrays.asList(TokenUtil.TOKEN_TYPE_ID, TokenUtil.TOKEN_TYPE_BEARER, TokenUtil.TOKEN_TYPE_JWT_ACCESS_TOKEN, TokenUtil.TOKEN_TYPE_JWT_ACCESS_TOKEN_PREFIXED);
+	public static final String OIDC_PARAMETER_REQUEST_URI = "request_uri";
 
-    public OIDCIdentityProvider(KeycloakSession session, OIDCIdentityProviderConfig config) {
+	public OIDCIdentityProvider(KeycloakSession session, OIDCIdentityProviderConfig config) {
         super(session, config);
 
         String defaultScope = config.getDefaultScope();
@@ -992,8 +1002,51 @@ public class OIDCIdentityProvider extends AbstractOAuth2IdentityProvider<OIDCIde
             uriBuilder.queryParam(OIDCLoginProtocol.MAX_AGE_PARAM, maxAge);
         }
 
+		String parUri = getConfig().getParUrl();
+		if (getConfig().isUseParUrl() && !Strings.isNullOrEmpty(parUri)) {
+			final var clientId = getConfig().getClientId();
+			final var originalUri = uriBuilder.build();
+			final var formParams = UriUtils.decodeQueryString(originalUri.getRawQuery());
+			final var requestUri = performParCall(parUri, request.getSession(), formParams);
+			uriBuilder = UriBuilder.fromUri(originalUri)
+					.replaceQuery(null)
+					.queryParam(OAUTH2_PARAMETER_CLIENT_ID, clientId)
+					.queryParam(OIDC_PARAMETER_REQUEST_URI, requestUri);
+		}
+
         return uriBuilder;
     }
+
+	private String performParCall(final String parUrl, final KeycloakSession session, final MultivaluedHashMap<String, String> formParams) {
+		try {
+			final var nameValuePairs = new ArrayList<NameValuePair>();
+			for (final var entry : formParams.entrySet()) {
+				final var key = entry.getKey();
+				for (final var value : entry.getValue()) {
+					nameValuePairs.add(new BasicNameValuePair(key, value));
+				}
+			}
+
+			var httpRequest = SimpleHttp.create(session).doPost(parUrl);
+			if (getConfig().isBasicAuthenticationUnencoded()
+					|| getConfig().isBasicAuthentication()
+					|| getConfig().isJWTAuthentication()) {
+				httpRequest = super.authenticateTokenRequest(httpRequest);
+			} else {
+				try (final var vaultStringSecret = session.vault().getStringSecret(getConfig().getClientSecret())) {
+					nameValuePairs.add(new BasicNameValuePair(OAUTH2_PARAMETER_CLIENT_SECRET, vaultStringSecret.get().orElse(getConfig().getClientSecret())));
+				}
+			}
+
+			return httpRequest.entity(new UrlEncodedFormEntity(nameValuePairs))
+					.acceptJson()
+					.asJson()
+					.findValue(OIDC_PARAMETER_REQUEST_URI)
+					.asText();
+		} catch (final IOException e) {
+			throw new IdentityBrokerException("Could not perform PAR call", e);
+		}
+	}
 
     @Override
     public void preprocessFederatedIdentity(KeycloakSession session, RealmModel realm, BrokeredIdentityContext context) {

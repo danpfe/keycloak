@@ -35,6 +35,10 @@ const Fields = ({ readOnly, isOIDC }: DiscoverySettingsProps) => {
     control,
     name: "config.pkceEnabled",
   });
+  const usePar = useWatch({
+    control,
+    name: "config.useParUrl",
+  });
   const jwtAuthorizationGrantEnabled = useWatch({
     control,
     name: "config.jwtAuthorizationGrantEnabled",
@@ -91,6 +95,23 @@ const Fields = ({ readOnly, isOIDC }: DiscoverySettingsProps) => {
           label={t("issuer")}
           readOnly={readOnly}
         />
+      )}
+      {isOIDC && (
+        <>
+          <DefaultSwitchControl
+            name="config.useParUrl"
+            label={t("useParUrl")}
+            isDisabled={readOnly}
+            stringify
+          />
+          {usePar === "true" && (
+            <TextControl
+              name="config.parUrl"
+              label={t("parUrl")}
+              readOnly={readOnly}
+            />
+          )}
+        </>
       )}
       {isOIDC && (
         <>

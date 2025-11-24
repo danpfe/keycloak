@@ -36,6 +36,9 @@ public class OIDCIdentityProviderConfig extends OAuth2IdentityProviderConfig imp
     public static final String SUPPORTS_CLIENT_ASSERTIONS = "supportsClientAssertions";
     public static final String SUPPORTS_CLIENT_ASSERTION_REUSE = "supportsClientAssertionReuse";
 
+	public static final String PAR_URL = "parUrl";
+	public static final String USE_PAR_URL = "useParUrl";
+
     public OIDCIdentityProviderConfig(IdentityProviderModel identityProviderModel) {
         super(identityProviderModel);
     }
@@ -128,6 +131,22 @@ public class OIDCIdentityProviderConfig extends OAuth2IdentityProviderConfig imp
         getConfig().put(JWKS_URL, jwksUrl);
     }
 
+	public boolean isUseParUrl() {
+		return Boolean.valueOf(getConfig().get(USE_PAR_URL));
+	}
+
+	public void setUseParUrl(boolean useParUrl) {
+		getConfig().put(USE_PAR_URL, String.valueOf(useParUrl));
+	}
+
+	public String getParUrl() {
+		return getConfig().get(PAR_URL);
+	}
+
+	public void setParUrl(String parUrl) {
+		getConfig().put(PAR_URL, parUrl);
+	}
+
     public boolean isBackchannelSupported() {
         return Boolean.valueOf(getConfig().get("backchannelSupported"));
     }
@@ -200,6 +219,7 @@ public class OIDCIdentityProviderConfig extends OAuth2IdentityProviderConfig imp
         SslRequired sslRequired = realm.getSslRequired();
         checkUrl(sslRequired, getJwksUrl(), "jwks_url");
         checkUrl(sslRequired, getLogoutUrl(), "logout_url");
+		checkUrl(sslRequired, getParUrl(), "par_url");
 
         if (isValidateSignature() || isJWTAuthorizationGrantEnabled() || isSupportsClientAssertions()) {
             String optionText = isValidateSignature() ? "Validate signatures" :
